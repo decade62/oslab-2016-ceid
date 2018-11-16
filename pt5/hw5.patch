@@ -1,0 +1,95 @@
+diff --git a/include/minix/callnr.h b/include/minix/callnr.h
+index 6f145cf..0a8613c 100644
+--- a/include/minix/callnr.h
++++ b/include/minix/callnr.h
+@@ -65,7 +65,7 @@
+ #define SETGROUPS_O	  66
+ #define GETMCONTEXT       67
+ #define SETMCONTEXT       68
+-
++#define PRINTINODE 69
+ /* Posix signal handling. */
+ #define SIGACTION	  71
+ #define SIGSUSPEND	  72
+diff --git a/include/printinode.c b/include/printinode.c
+new file mode 100644
+index 0000000..46de9ca
+--- /dev/null
++++ b/include/printinode.c
+@@ -0,0 +1,10 @@
++#include "/usr/src/include/printinode.h"
++#include <stdio.h>
++#include <stdlib.h>
++
++int main(int argc, char **argv) {
++   if(argc!=2) exit(1);
++   printinode(argv[1]);
++   return 0;
++}
++
+diff --git a/include/printinode.h b/include/printinode.h
+new file mode 100644
+index 0000000..b985293
+--- /dev/null
++++ b/include/printinode.h
+@@ -0,0 +1,11 @@
++#include <sys/cdefs.h>
++#include <lib.h>
++#include <string.h>
++
++int printinode(char *ch)
++{
++   message m;
++   strcpy(m.m3_ca1, ch);
++   return(_syscall(VFS_PROC_NR, PRINTINODE, &m));
++}
++
+diff --git a/servers/vfs/path.c b/servers/vfs/path.c
+index 242fe3e..3bcfe28 100644
+--- a/servers/vfs/path.c
++++ b/servers/vfs/path.c
+@@ -149,6 +149,18 @@ struct fproc *rfp;
+   return advance(start_dir, resolve, rfp);
+ }
+ 
++int do_printinode() {
++struct lookup resolve;
++struct vnode *vp;
++struct vmnt *vmp;
++lookup_init(&resolve, m_in.m3_ca1, PATH_NOFLAGS, &vmp, &vp);
++resolve.l_vmnt_lock = VMNT_READ;
++resolve.l_vnode_lock = VNODE_READ;
++vp = eat_path(&resolve, fp);
++if(vp!=NULL) printf("inode: %d\n", vp->v_inode_nr);
++else printf("inode: -\n");
++return 0;
++}
+ /*===========================================================================*
+  *				last_dir				     *
+  *===========================================================================*/
+diff --git a/servers/vfs/proto.h b/servers/vfs/proto.h
+index b98d742..72f8379 100644
+--- a/servers/vfs/proto.h
++++ b/servers/vfs/proto.h
+@@ -181,7 +181,7 @@ void lookup_init(struct lookup *resolve, char *path, int flags, struct
+ int get_name(struct vnode *dirp, struct vnode *entry, char *_name);
+ int canonical_path(char *orig_path, struct fproc *rfp);
+ int do_check_perms(void);
+-
++int do_printinode(void);
+ /* pipe.c */
+ int do_pipe(void);
+ int map_vnode(struct vnode *vp, endpoint_t fs_e);
+diff --git a/servers/vfs/table.c b/servers/vfs/table.c
+index 8371e34..de71030 100644
+--- a/servers/vfs/table.c
++++ b/servers/vfs/table.c
+@@ -84,7 +84,7 @@ int (*call_vec[])(void) = {
+ 	do_fstat, 	/* 66 = fstat - badly numbered, being phased out */
+ 	do_lstat,	/* 67 = lstat - badly numbered, being phased out */
+ 	no_sys,		/* 68 = unused	*/
+-	no_sys,		/* 69 = unused  */
++do_printinode,
+ 	no_sys,		/* 70 = unused  */
+ 	no_sys,		/* 71 = (sigaction) */
+ 	no_sys,		/* 72 = (sigsuspend) */

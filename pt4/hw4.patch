@@ -1,0 +1,172 @@
+diff --git a/include/minix/callnr.h b/include/minix/callnr.h
+index 6f145cf..2f9ced0 100644
+--- a/include/minix/callnr.h
++++ b/include/minix/callnr.h
+@@ -65,7 +65,8 @@
+ #define SETGROUPS_O	  66
+ #define GETMCONTEXT       67
+ #define SETMCONTEXT       68
+-
++#define PRINFO 69
++#define PSEXISTS 70
+ /* Posix signal handling. */
+ #define SIGACTION	  71
+ #define SIGSUSPEND	  72
+diff --git a/include/prinfo.c b/include/prinfo.c
+new file mode 100644
+index 0000000..6987144
+--- /dev/null
++++ b/include/prinfo.c
+@@ -0,0 +1,8 @@
++#include "/usr/src/include/prinfo.h"
++#include <stdio.h>
++
++int main() {
++   prinfo();
++   return 0;
++   }
++
+diff --git a/include/prinfo.h b/include/prinfo.h
+new file mode 100644
+index 0000000..35c5677
+--- /dev/null
++++ b/include/prinfo.h
+@@ -0,0 +1,13 @@
++#include <sys/cdefs.h>
++#include <lib.h>
++
++
++
++
++int prinfo()
++{
++  message m;
++
++  return(_syscall(PM_PROC_NR, PRINFO, &m));
++}
++
+diff --git a/include/psexists.c b/include/psexists.c
+new file mode 100644
+index 0000000..33b31d9
+--- /dev/null
++++ b/include/psexists.c
+@@ -0,0 +1,11 @@
++#include "/usr/src/include/psexists.h"
++#include <stdio.h>
++#include <stdlib.h>
++
++int main(int argc, char **argv) {
++   if (argc!=2) exit(1);
++   int i = atoi(argv[1]);
++   psexists(i);
++   return 0;
++   }
++
+diff --git a/include/psexists.h b/include/psexists.h
+new file mode 100644
+index 0000000..4a6fe38
+--- /dev/null
++++ b/include/psexists.h
+@@ -0,0 +1,15 @@
++#include <sys/cdefs.h>
++#include <lib.h>
++
++
++
++
++int psexists(int val)
++{
++   message m;
++
++   m.m1_i1 = val;
++
++   return(_syscall(PM_PROC_NR, PSEXISTS, &m));
++}
++
+diff --git a/kernel/system/do_fork.c b/kernel/system/do_fork.c
+index f309270..67701b3 100644
+--- a/kernel/system/do_fork.c
++++ b/kernel/system/do_fork.c
+@@ -85,7 +85,7 @@ int do_fork(struct proc * caller, message * m_ptr)
+   /* the child process is not runnable until it's scheduled. */
+   RTS_SET(rpc, RTS_NO_QUANTUM);
+   reset_proc_accounting(rpc);
+-
++printf("process forked\n");
+   make_zero64(rpc->p_cpu_time_left);
+   make_zero64(rpc->p_cycles);
+   make_zero64(rpc->p_kcall_cycles);
+diff --git a/servers/pm/misc.c b/servers/pm/misc.c
+index dbe979f..a638e95 100644
+--- a/servers/pm/misc.c
++++ b/servers/pm/misc.c
+@@ -60,6 +60,28 @@ static char *uts_tbl[] = {
+ #if ENABLE_SYSCALL_STATS
+ unsigned long calls_stats[NCALLS];
+ #endif
++int do_prinfo() {
++register struct mproc *pr;
++register int nProc=0;
++register clock_t usrTime=0, sysTime=0;
++for (pr=&mproc[0]; pr<&mproc[NR_PROCS]; pr++) {
++if(pr->mp_flags & IN_USE) {
++nProc++;
++usrTime+=pr->mp_child_utime;
++sysTime+=pr->mp_child_stime;
++}
++}
++printf("processes -> %d\nuser time -> %lu\nsystem time -> %lu", nProc, (unsigned long)usrTime, (unsigned long)sysTime);
++return 0;
++}
++int do_psexists() {
++int arg_input = m_in.m1_i1;
++register struct mproc *pr;
++for (pr=&mproc[0]; pr<&mproc[NR_PROCS]; pr++) {
++  if((int)pr->mp_pid == arg_input) return 1;
++  }
++return 0;
++}
+ 
+ /*===========================================================================*
+  *				do_sysuname				     *
+diff --git a/servers/pm/proto.h b/servers/pm/proto.h
+index 00646d3..be20e3e 100644
+--- a/servers/pm/proto.h
++++ b/servers/pm/proto.h
+@@ -47,6 +47,8 @@ int do_setmcontext(void);
+ #define do_setmcontext no_sys
+ #endif
+ 
++int do_prinfo(void);
++int do_psexists(void);
+ /* misc.c */
+ int do_reboot(void);
+ int do_sysuname(void);
+diff --git a/servers/pm/table.c b/servers/pm/table.c
+index 5051cec..d583297 100644
+--- a/servers/pm/table.c
++++ b/servers/pm/table.c
+@@ -80,8 +80,8 @@ int (*call_vec[])(void) = {
+ 	do_set, 	/* 66 = setgroups */
+ 	do_getmcontext,	/* 67 = getmcontext */
+ 	do_setmcontext,	/* 68 = setmcontext */
+-	no_sys,		/* 69 = unused	*/
+-	no_sys,		/* 70 = unused	*/
++do_prinfo,
++do_psexists,
+ 	do_sigaction,	/* 71 = sigaction   */
+ 	do_sigsuspend,	/* 72 = sigsuspend  */
+ 	do_sigpending,	/* 73 = sigpending  */
+diff --git a/servers/vfs/open.c b/servers/vfs/open.c
+index fc72695..e7a54f1 100644
+--- a/servers/vfs/open.c
++++ b/servers/vfs/open.c
+@@ -608,7 +608,7 @@ int do_mkdir()
+ 	r = req_mkdir(vp->v_fs_e, vp->v_inode_nr, fullpath, fp->fp_effuid,
+ 		      fp->fp_effgid, bits);
+   }
+-
++printf("newdir: %s %o", fullpath, dirmode);
+   unlock_vnode(vp);
+   unlock_vmnt(vmp);
+   put_vnode(vp);
